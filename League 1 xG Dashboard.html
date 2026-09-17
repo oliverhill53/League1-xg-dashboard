@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>League Table Dashboard — xG Performance Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#0B1613;
+  --panel:#122420;
+  --panel2:#17322A;
+  --chalk:#F2EFE4;
+  --muted:#95AA9F;
+  --gold:#E8B94B;
+  --gold-dim:#B99138;
+  --win:#57A373;
+  --loss:#C1544A;
+  --draw:#8C9A92;
+  --line:rgba(242,239,228,0.10);
+  --line-strong:rgba(242,239,228,0.18);
+  --radius:14px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--ink);
+  color:var(--chalk);
+  font-family:'Inter',sans-serif;
+  -webkit-font-smoothing:antialiased;
+  position:relative;
+  overflow-x:hidden;
+}
+.pitchglow{
+  position:fixed; inset:0; z-index:-1;
+  background:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(87,163,115,0.14), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 100% 10%, rgba(232,185,75,0.07), transparent 60%);
+}
+h1,h2,h3{font-family:'Oswald',sans-serif; margin:0; text-transform:uppercase; letter-spacing:0.02em;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+
+/* HERO */
+.hero{
+  position:relative;
+  padding:64px 6vw 40px;
+  border-bottom:1px dashed var(--line-strong);
+  overflow:hidden;
+}
+.hero-inner{position:relative; z-index:2; max-width:760px;}
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace;
+  color:var(--gold);
+  font-size:12px;
+  letter-spacing:0.18em;
+  margin-bottom:18px;
+}
+.hero h1{
+  font-size:clamp(38px,6vw,64px);
+  line-height:0.98;
+  font-weight:700;
+  color:var(--chalk);
+}
+.hero h1 span{color:var(--gold);}
+.hero-sub{
+  font-size:16px;
+  color:var(--muted);
+  max-width:520px;
+  margin-top:18px;
+  line-height:1.5;
+}
+.hero-stats{
+  display:flex;
+  gap:36px;
+  margin-top:36px;
+  flex-wrap:wrap;
+}
+.hero-stat .num{font-family:'IBM Plex Mono',monospace; font-size:28px; font-weight:600; color:var(--gold);}
+.hero-stat .label{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-top:2px;}
+
+.pitch-lines{
+  position:absolute; top:-40px; right:-60px;
+  width:420px; height:420px;
+  color:var(--line-strong);
+  z-index:1;
+}
+.pitch-lines circle, .pitch-lines line{fill:none; stroke:currentColor; stroke-width:1.5; stroke-dasharray:4 6;}
+
+/* DATA BAR */
+.data-bar{
+  background:var(--panel2);
+  border-bottom:1px solid var(--line);
+}
+.data-bar-inner{
+  max-width:1400px; margin:0 auto;
+  padding:10px 6vw;
+  display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+}
+.data-status{font-size:12px; color:var(--muted); font-family:'IBM Plex Mono',monospace;}
+.data-status.ok{color:var(--win);}
+.data-status.err{color:var(--loss);}
+.upload-btn{
+  position:relative;
+  background:var(--gold); color:var(--ink);
+  font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.04em;
+  font-size:12px; font-weight:600;
+  padding:9px 16px; border-radius:8px;
+  cursor:pointer; white-space:nowrap;
+  transition:background .15s;
+}
+.upload-btn:hover{background:#f0c665;}
+.upload-btn input{ position:absolute; inset:0; opacity:0; cursor:pointer; }
+
+/* TABS */
+.tabs{
+  display:flex;
+  gap:2px;
+  padding:0 6vw;
+  background:var(--panel);
+  border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:50;
+  overflow-x:auto;
+}
+.tab{
+  background:none; border:none; color:var(--muted);
+  font-family:'Oswald',sans-serif; text-transform:uppercase; letter-spacing:0.05em;
+  font-size:14px; font-weight:500;
+  padding:18px 20px;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+  white-space:nowrap;
+  transition:color .15s, border-color .15s;
+}
+.tab:hover{color:var(--chalk);}
+.tab.active{color:var(--gold); border-bottom-color:var(--gold);}
+
+main{padding:36px 6vw 20px; max-width:1400px; margin:0 auto;}
+.panel{display:none;}
+.panel.active{display:block; animation:fadein .35s ease;}
+@keyframes fadein{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+.grid{display:grid; gap:20px;}
+.grid.cards{grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin-bottom:24px;}
+.grid.two{grid-template-columns:1fr 1fr; margin-bottom:24px;}
+.grid.insights{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));}
+@media(max-width:860px){ .grid.two{grid-template-columns:1fr;} }
+
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:22px;
+}
+.card-head{margin-bottom:16px;}
+.card-head h3{font-size:18px; color:var(--chalk);}
+.card-head .unit{color:var(--gold); font-size:12px; text-transform:none; font-family:'Inter',sans-serif; font-weight:400; letter-spacing:0;}
+.card-note{color:var(--muted); font-size:13px; margin-top:6px; line-height:1.4;}
+
+/* stat cards */
+.stat-card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:20px;
+  position:relative;
+  overflow:hidden;
+}
+.stat-card::before{
+  content:"";
+  position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:var(--gold);
+}
+.stat-card .label{font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted);}
+.stat-card .value{font-family:'IBM Plex Mono',monospace; font-size:26px; font-weight:600; margin-top:8px; color:var(--chalk);}
+.stat-card .sub{font-size:12px; color:var(--muted); margin-top:4px;}
+.stat-card.pos::before{background:var(--win);}
+.stat-card.neg::before{background:var(--loss);}
+
+/* rank list */
+.rank-list{list-style:none; margin:0; padding:0; counter-reset:rank;}
+.rank-list li{
+  display:grid; grid-template-columns:28px 1fr auto; align-items:center;
+  gap:12px; padding:10px 4px; border-bottom:1px dashed var(--line);
+  font-size:14px;
+}
+.rank-list li:last-child{border-bottom:none;}
+.rank-list .rnum{font-family:'IBM Plex Mono',monospace; color:var(--gold); font-weight:600;}
+.rank-list .rteam{font-weight:500;}
+.rank-list .rpts{font-family:'IBM Plex Mono',monospace; color:var(--muted); font-size:13px;}
+
+/* insight cards */
+.insight{
+  background:var(--panel2);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:16px;
+}
+.insight .itag{font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--gold); font-family:'IBM Plex Mono',monospace;}
+.insight p{font-size:14px; line-height:1.5; margin:8px 0 0; color:var(--chalk);}
+.insight p strong{color:var(--gold);}
+
+/* selectors */
+.selector-card{margin-bottom:24px;}
+.selector-row{display:flex; align-items:center; gap:20px; justify-content:center; flex-wrap:wrap;}
+.selector-row.single{justify-content:flex-start;}
+.selector{display:flex; flex-direction:column; gap:6px; min-width:220px;}
+.selector label{font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted);}
+.selector select{
+  background:var(--panel2); color:var(--chalk); border:1px solid var(--line-strong);
+  border-radius:8px; padding:10px 12px; font-family:'Inter',sans-serif; font-size:14px;
+}
+.vs{font-family:'Oswald',sans-serif; color:var(--gold); font-weight:600; font-size:20px;}
+
+.mini-card h4{font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:16px; color:var(--gold); margin:0 0 12px;}
+.mini-stat-row{display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px dashed var(--line); font-size:13px;}
+.mini-stat-row:last-child{border-bottom:none;}
+.mini-stat-row .k{color:var(--muted);}
+.mini-stat-row .v{font-family:'IBM Plex Mono',monospace; font-weight:600;}
+.form-dots{display:flex; gap:6px; margin-top:6px;}
+.dot{width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:var(--ink);}
+.dot.W{background:var(--win);} .dot.D{background:var(--draw); color:var(--ink);} .dot.L{background:var(--loss);}
+
+/* table */
+.table-controls{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;}
+#tableSearch{
+  background:var(--panel2); border:1px solid var(--line-strong); color:var(--chalk);
+  padding:9px 12px; border-radius:8px; font-family:'Inter',sans-serif; font-size:13px; min-width:220px;
+}
+.table-hint{font-size:12px; color:var(--muted);}
+.table-scroll{overflow-x:auto;}
+table{width:100%; border-collapse:collapse; font-size:13px; min-width:800px;}
+thead th{
+  text-align:left; padding:10px 12px; color:var(--gold);
+  text-transform:uppercase; font-size:11px; letter-spacing:0.06em;
+  border-bottom:1px solid var(--line-strong); cursor:pointer; user-select:none;
+  font-family:'IBM Plex Mono',monospace; white-space:nowrap;
+}
+thead th:hover{color:var(--chalk);}
+tbody td{padding:9px 12px; border-bottom:1px solid var(--line); font-family:'IBM Plex Mono',monospace; white-space:nowrap;}
+tbody td:nth-child(2){font-family:'Inter',sans-serif; font-weight:500;}
+tbody tr:hover{background:var(--panel2);}
+.pos-val{color:var(--win);} .neg-val{color:var(--loss);}
+
+footer{text-align:center; padding:30px 20px 50px; color:var(--muted); font-size:12px; border-top:1px dashed var(--line); margin-top:20px;}
+
+@media(max-width:600px){
+  .hero{padding:44px 5vw 30px;}
+  .pitch-lines{display:none;}
+  main{padding:26px 5vw;}
+  .tabs{padding:0 4vw;}
+}
+
+</style>
+</head>
+<body>
+
+<div class="pitchglow"></div>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">SEASON 2026/27 &middot; DATA ANALYSIS PORTFOLIO</div>
+    <h1>xG PERFORMANCE<br><span>DASHBOARD</span></h1>
+    <p class="hero-sub">Every match reshaped into team-level form, chance quality, and finishing efficiency &mdash; tracked matchday by matchday.</p>
+    <div class="hero-stats" id="heroStats"></div>
+  </div>
+  <svg class="pitch-lines" viewBox="0 0 400 400" aria-hidden="true">
+    <circle cx="200" cy="200" r="70" />
+    <circle cx="200" cy="200" r="3" fill="currentColor" stroke="none"/>
+    <line x1="200" y1="0" x2="200" y2="400" />
+  </svg>
+</header>
+
+<div class="data-bar">
+  <div class="data-bar-inner">
+    <div class="data-status" id="dataStatus">Showing sample season data &middot; 24 matches</div>
+    <label class="upload-btn">
+      Update from CSV
+      <input type="file" id="csvInput" accept=".csv">
+    </label>
+  </div>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="overview">Overview</button>
+  <button class="tab" data-tab="compare">Team Comparison</button>
+  <button class="tab" data-tab="trends">Trends Over Time</button>
+  <button class="tab" data-tab="leaderboard">Leaderboard</button>
+</nav>
+
+<main>
+
+  <!-- OVERVIEW -->
+  <section class="panel active" id="overview">
+    <div class="grid cards" id="overviewCards"></div>
+
+    <div class="grid two">
+      <div class="card chart-card">
+        <div class="card-head">
+          <h3>xG For vs xG Against <span class="unit">per game</span></h3>
+          <p class="card-note">Ranked by expected-goal difference. Bars above the line create more than they concede.</p>
+        </div>
+        <canvas id="chartOverviewBars" height="320"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3>Best Teams <span class="unit">ranked</span></h3>
+          <p class="card-note">Ranked by <strong>Points</strong> (3 for a win, 1 for a draw), tie-broken by goal difference &mdash; the same method used in the real league table.</p>
+        </div>
+        <ol class="rank-list" id="bestTeamsList"></ol>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Notable Patterns</h3>
+        <p class="card-note">Automatically surfaced from this matchday's data.</p>
+      </div>
+      <div class="grid insights" id="insightsGrid"></div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section class="panel" id="compare">
+    <div class="card selector-card">
+      <div class="selector-row">
+        <div class="selector">
+          <label>Team A</label>
+          <select id="teamA"></select>
+        </div>
+        <div class="vs">VS</div>
+        <div class="selector">
+          <label>Team B</label>
+          <select id="teamB"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <div class="card chart-card">
+        <div class="card-head"><h3>Season Profile</h3><p class="card-note">Normalized 0&ndash;100 across five metrics. Further out is better on every axis.</p></div>
+        <canvas id="chartRadar" height="320"></canvas>
+      </div>
+      <div class="card chart-card">
+        <div class="card-head"><h3>Head-to-Head Stats</h3><p class="card-note">Season totals side by side.</p></div>
+        <canvas id="chartCompareBar" height="320"></canvas>
+      </div>
+    </div>
+
+    <div class="grid two">
+      <div class="card" id="teamACardWrap"></div>
+      <div class="card" id="teamBCardWrap"></div>
+    </div>
+  </section>
+
+  <!-- TRENDS -->
+  <section class="panel" id="trends">
+    <div class="card selector-card">
+      <div class="selector-row single">
+        <div class="selector">
+          <label>Team</label>
+          <select id="trendTeam"></select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card chart-card">
+      <div class="card-head"><h3>xG Difference by Match <span class="unit" id="trendTeamLabel"></span></h3><p class="card-note">Green bars: chances were better than the opponent's. Red bars: chances went the other way.</p></div>
+      <canvas id="chartTrendBar" height="280"></canvas>
+    </div>
+
+    <div class="card chart-card">
+      <div class="card-head">
+        <h3>League Shape <span class="unit">attack vs defense</span></h3>
+        <p class="card-note">Every team plotted by attacking output (x) and defensive solidity (y, inverted &mdash; higher is stingier). Bubble size = points.</p>
+      </div>
+      <canvas id="chartScatter" height="380"></canvas>
+    </div>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section class="panel" id="leaderboard">
+    <div class="card">
+      <div class="table-controls">
+        <input type="text" id="tableSearch" placeholder="Search team...">
+        <div class="table-hint">Click a column heading to sort</div>
+      </div>
+      <div class="table-scroll">
+        <table id="leaderboardTable">
+          <thead>
+            <tr>
+              <th data-key="rank">#</th>
+              <th data-key="Team">Team</th>
+              <th data-key="Played">P</th>
+              <th data-key="Wins">W</th>
+              <th data-key="Draws">D</th>
+              <th data-key="Losses">L</th>
+              <th data-key="GoalsFor">GF</th>
+              <th data-key="GoalsAgainst">GA</th>
+              <th data-key="GoalDiff">GD</th>
+              <th data-key="Points">Pts</th>
+              <th data-key="xGFor">xGF</th>
+              <th data-key="xGAgainst">xGA</th>
+              <th data-key="xGDiff">xGD</th>
+              <th data-key="xGOver">xG&plusmn;</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <p>Built from match-level xG and results data &middot; reshaped to team-level perspective for season analysis</p>
+</footer>
+
+<script>
+const DATA = {"matches": [{"MatchID": 1, "Date": "2026-08-15", "HomeTeam": "Barnsley", "AwayTeam": "Bromley", "HomeXG": 1.32, "AwayXG": 1.42, "HomeGoals": 0.0, "AwayGoals": 1.0, "xGDiffHA": -0.1, "GoalDiffHA": -1.0, "TotalXG": 2.74, "TotalGoals": 1.0, "xGOverHome": -1.32, "xGOverAway": -0.42, "Result": "Away Win"}, {"MatchID": 2, "Date": "2026-08-15", "HomeTeam": "Blackpool", "AwayTeam": "Wycombe Wanderers", "HomeXG": 2.37, "AwayXG": 1.29, "HomeGoals": 1.0, "AwayGoals": 1.0, "xGDiffHA": 1.08, "GoalDiffHA": 0.0, "TotalXG": 3.66, "TotalGoals": 2.0, "xGOverHome": -1.37, "xGOverAway": -0.29, "Result": "Draw"}, {"MatchID": 3, "Date": "2026-08-15", "HomeTeam": "Bradford City", "AwayTeam": "Peterborough United", "HomeXG": 1.97, "AwayXG": 1.11, "HomeGoals": 2.0, "AwayGoals": 0.0, "xGDiffHA": 0.86, "GoalDiffHA": 2.0, "TotalXG": 3.08, "TotalGoals": 2.0, "xGOverHome": 0.03, "xGOverAway": -1.11, "Result": "Home Win"}, {"MatchID": 4, "Date": "2026-08-15", "HomeTeam": "Burton Albion", "AwayTeam": "Stevenage", "HomeXG": 0.94, "AwayXG": 0.53, "HomeGoals": 1.0, "AwayGoals": 1.0, "xGDiffHA": 0.41, "GoalDiffHA": 0.0, "TotalXG": 1.47, "TotalGoals": 2.0, "xGOverHome": 0.06, "xGOverAway": 0.47, "Result": "Draw"}, {"MatchID": 5, "Date": "2026-08-15", "HomeTeam": "Cambridge United", "AwayTeam": "Wigan Athletic", "HomeXG": 1.74, "AwayXG": 2.2, "HomeGoals": 3.0, "AwayGoals": 2.0, "xGDiffHA": -0.46, "GoalDiffHA": 1.0, "TotalXG": 3.94, "TotalGoals": 5.0, "xGOverHome": 1.26, "xGOverAway": -0.2, "Result": "Home Win"}, {"MatchID": 6, "Date": "2026-08-15", "HomeTeam": "Huddersfield Town", "AwayTeam": "AFC Wimbledon", "HomeXG": 1.24, "AwayXG": 0.38, "HomeGoals": 3.0, "AwayGoals": 0.0, "xGDiffHA": 0.86, "GoalDiffHA": 3.0, "TotalXG": 1.62, "TotalGoals": 3.0, "xGOverHome": 1.76, "xGOverAway": -0.38, "Result": "Home Win"}, {"MatchID": 7, "Date": "2026-08-15", "HomeTeam": "Leyton Orient", "AwayTeam": "Sheffield Wednesday", "HomeXG": 1.38, "AwayXG": 2.84, "HomeGoals": 1.0, "AwayGoals": 2.0, "xGDiffHA": -1.46, "GoalDiffHA": -1.0, "TotalXG": 4.22, "TotalGoals": 3.0, "xGOverHome": -0.38, "xGOverAway": -0.84, "Result": "Away Win"}, {"MatchID": 8, "Date": "2026-08-15", "HomeTeam": "Mansfield Town", "AwayTeam": "Doncaster Rovers", "HomeXG": 1.44, "AwayXG": 1.06, "HomeGoals": 2.0, "AwayGoals": 1.0, "xGDiffHA": 0.38, "GoalDiffHA": 1.0, "TotalXG": 2.5, "TotalGoals": 3.0, "xGOverHome": 0.56, "xGOverAway": -0.06, "Result": "Home Win"}, {"MatchID": 9, "Date": "2026-08-15", "HomeTeam": "Notts County", "AwayTeam": "Leicester City", "HomeXG": 2.18, "AwayXG": 0.74, "HomeGoals": 1.0, "AwayGoals": 1.0, "xGDiffHA": 1.44, "GoalDiffHA": 0.0, "TotalXG": 2.92, "TotalGoals": 2.0, "xGOverHome": -1.18, "xGOverAway": 0.26, "Result": "Draw"}, {"MatchID": 10, "Date": "2026-08-15", "HomeTeam": "Oxford United", "AwayTeam": "Milton Keynes Dons", "HomeXG": 1.83, "AwayXG": 2.2, "HomeGoals": 2.0, "AwayGoals": 2.0, "xGDiffHA": -0.37, "GoalDiffHA": 0.0, "TotalXG": 4.03, "TotalGoals": 4.0, "xGOverHome": 0.17, "xGOverAway": -0.2, "Result": "Draw"}, {"MatchID": 11, "Date": "2026-08-15", "HomeTeam": "Plymouth Argyle", "AwayTeam": "Stockport County", "HomeXG": 0.92, "AwayXG": 1.81, "HomeGoals": 1.0, "AwayGoals": 3.0, "xGDiffHA": -0.89, "GoalDiffHA": -2.0, "TotalXG": 2.73, "TotalGoals": 4.0, "xGOverHome": 0.08, "xGOverAway": 1.19, "Result": "Away Win"}, {"MatchID": 12, "Date": "2026-08-15", "HomeTeam": "Reading", "AwayTeam": "Luton Town", "HomeXG": 1.61, "AwayXG": 1.65, "HomeGoals": 3.0, "AwayGoals": 4.0, "xGDiffHA": -0.04, "GoalDiffHA": -1.0, "TotalXG": 3.26, "TotalGoals": 7.0, "xGOverHome": 1.39, "xGOverAway": 2.35, "Result": "Away Win"}, {"MatchID": 13, "Date": "2026-08-20", "HomeTeam": "Sheffield Wednesday", "AwayTeam": "Bradford City", "HomeXG": 1.49, "AwayXG": 0.59, "HomeGoals": 0.0, "AwayGoals": 1.0, "xGDiffHA": 0.9, "GoalDiffHA": -1.0, "TotalXG": 2.08, "TotalGoals": 1.0, "xGOverHome": -1.49, "xGOverAway": 0.41, "Result": "Away Win"}, {"MatchID": 14, "Date": "2026-08-22", "HomeTeam": "AFC Wimbledon", "AwayTeam": "Reading", "HomeXG": 0.37, "AwayXG": 1.28, "HomeGoals": 0.0, "AwayGoals": 0.0, "xGDiffHA": -0.91, "GoalDiffHA": 0.0, "TotalXG": 1.65, "TotalGoals": 0.0, "xGOverHome": -0.37, "xGOverAway": -1.28, "Result": "Draw"}, {"MatchID": 15, "Date": "2026-08-22", "HomeTeam": "Bromley", "AwayTeam": "Cambridge United", "HomeXG": 0.58, "AwayXG": 0.59, "HomeGoals": 1.0, "AwayGoals": 1.0, "xGDiffHA": -0.01, "GoalDiffHA": 0.0, "TotalXG": 1.17, "TotalGoals": 2.0, "xGOverHome": 0.42, "xGOverAway": 0.41, "Result": "Draw"}, {"MatchID": 16, "Date": "2026-08-22", "HomeTeam": "Doncaster Rovers", "AwayTeam": "Barnsley", "HomeXG": 1.82, "AwayXG": 0.45, "HomeGoals": 0.0, "AwayGoals": 0.0, "xGDiffHA": 1.37, "GoalDiffHA": 0.0, "TotalXG": 2.27, "TotalGoals": 0.0, "xGOverHome": -1.82, "xGOverAway": -0.45, "Result": "Draw"}, {"MatchID": 17, "Date": "2026-08-22", "HomeTeam": "Leicester City", "AwayTeam": "Burton Albion", "HomeXG": 1.31, "AwayXG": 0.81, "HomeGoals": 1.0, "AwayGoals": 2.0, "xGDiffHA": 0.5, "GoalDiffHA": -1.0, "TotalXG": 2.12, "TotalGoals": 3.0, "xGOverHome": -0.31, "xGOverAway": 1.19, "Result": "Away Win"}, {"MatchID": 18, "Date": "2026-08-22", "HomeTeam": "Luton Town", "AwayTeam": "Notts County", "HomeXG": 1.85, "AwayXG": 0.76, "HomeGoals": 2.0, "AwayGoals": 2.0, "xGDiffHA": 1.09, "GoalDiffHA": 0.0, "TotalXG": 2.61, "TotalGoals": 4.0, "xGOverHome": 0.15, "xGOverAway": 1.24, "Result": "Draw"}, {"MatchID": 19, "Date": "2026-08-22", "HomeTeam": "Milton Keynes Dons", "AwayTeam": "Huddersfield Town", "HomeXG": 1.54, "AwayXG": 2.28, "HomeGoals": 1.0, "AwayGoals": 1.0, "xGDiffHA": -0.74, "GoalDiffHA": 0.0, "TotalXG": 3.82, "TotalGoals": 2.0, "xGOverHome": -0.54, "xGOverAway": -1.28, "Result": "Draw"}, {"MatchID": 20, "Date": "2026-08-22", "HomeTeam": "Peterborough United", "AwayTeam": "Mansfield Town", "HomeXG": 1.39, "AwayXG": 1.25, "HomeGoals": 2.0, "AwayGoals": 1.0, "xGDiffHA": 0.14, "GoalDiffHA": 1.0, "TotalXG": 2.64, "TotalGoals": 3.0, "xGOverHome": 0.61, "xGOverAway": -0.25, "Result": "Home Win"}, {"MatchID": 21, "Date": "2026-08-22", "HomeTeam": "Stevenage", "AwayTeam": "Oxford United", "HomeXG": 1.17, "AwayXG": 1.36, "HomeGoals": 1.0, "AwayGoals": 2.0, "xGDiffHA": -0.19, "GoalDiffHA": -1.0, "TotalXG": 2.53, "TotalGoals": 3.0, "xGOverHome": -0.17, "xGOverAway": 0.64, "Result": "Away Win"}, {"MatchID": 22, "Date": "2026-08-22", "HomeTeam": "Stockport County", "AwayTeam": "Blackpool", "HomeXG": 3.54, "AwayXG": 1.79, "HomeGoals": 1.0, "AwayGoals": 2.0, "xGDiffHA": 1.75, "GoalDiffHA": -1.0, "TotalXG": 5.33, "TotalGoals": 3.0, "xGOverHome": -2.54, "xGOverAway": 0.21, "Result": "Away Win"}, {"MatchID": 23, "Date": "2026-08-22", "HomeTeam": "Wigan Athletic", "AwayTeam": "Leyton Orient", "HomeXG": 1.6, "AwayXG": 1.25, "HomeGoals": 0.0, "AwayGoals": 2.0, "xGDiffHA": 0.35, "GoalDiffHA": -2.0, "TotalXG": 2.85, "TotalGoals": 2.0, "xGOverHome": -1.6, "xGOverAway": 0.75, "Result": "Away Win"}, {"MatchID": 24, "Date": "2026-08-22", "HomeTeam": "Wycombe Wanderers", "AwayTeam": "Plymouth Argyle", "HomeXG": 1.89, "AwayXG": 0.76, "HomeGoals": 1.0, "AwayGoals": 1.0, "xGDiffHA": 1.13, "GoalDiffHA": 0.0, "TotalXG": 2.65, "TotalGoals": 2.0, "xGOverHome": -0.89, "xGOverAway": 0.24, "Result": "Draw"}], "teamLevel": [{"MatchID": 6, "Date": "2026-08-15", "Team": "AFC Wimbledon", "Opponent": "Huddersfield Town", "TeamXG": 0.38, "OppXG": 1.24, "TeamGoals": 0.0, "OppGoals": 3.0, "Venue": "Away", "xGDiff": -0.86, "GoalDiff": -3.0, "xGOver": -0.38, "Result": "Loss"}, {"MatchID": 14, "Date": "2026-08-22", "Team": "AFC Wimbledon", "Opponent": "Reading", "TeamXG": 0.37, "OppXG": 1.28, "TeamGoals": 0.0, "OppGoals": 0.0, "Venue": "Home", "xGDiff": -0.91, "GoalDiff": 0.0, "xGOver": -0.37, "Result": "Draw"}, {"MatchID": 1, "Date": "2026-08-15", "Team": "Barnsley", "Opponent": "Bromley", "TeamXG": 1.32, "OppXG": 1.42, "TeamGoals": 0.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": -0.1, "GoalDiff": -1.0, "xGOver": -1.32, "Result": "Loss"}, {"MatchID": 16, "Date": "2026-08-22", "Team": "Barnsley", "Opponent": "Doncaster Rovers", "TeamXG": 0.45, "OppXG": 1.82, "TeamGoals": 0.0, "OppGoals": 0.0, "Venue": "Away", "xGDiff": -1.37, "GoalDiff": 0.0, "xGOver": -0.45, "Result": "Draw"}, {"MatchID": 2, "Date": "2026-08-15", "Team": "Blackpool", "Opponent": "Wycombe Wanderers", "TeamXG": 2.37, "OppXG": 1.29, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 1.08, "GoalDiff": 0.0, "xGOver": -1.37, "Result": "Draw"}, {"MatchID": 22, "Date": "2026-08-22", "Team": "Blackpool", "Opponent": "Stockport County", "TeamXG": 1.79, "OppXG": 3.54, "TeamGoals": 2.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": -1.75, "GoalDiff": 1.0, "xGOver": 0.21, "Result": "Win"}, {"MatchID": 3, "Date": "2026-08-15", "Team": "Bradford City", "Opponent": "Peterborough United", "TeamXG": 1.97, "OppXG": 1.11, "TeamGoals": 2.0, "OppGoals": 0.0, "Venue": "Home", "xGDiff": 0.86, "GoalDiff": 2.0, "xGOver": 0.03, "Result": "Win"}, {"MatchID": 13, "Date": "2026-08-20", "Team": "Bradford City", "Opponent": "Sheffield Wednesday", "TeamXG": 0.59, "OppXG": 1.49, "TeamGoals": 1.0, "OppGoals": 0.0, "Venue": "Away", "xGDiff": -0.9, "GoalDiff": 1.0, "xGOver": 0.41, "Result": "Win"}, {"MatchID": 1, "Date": "2026-08-15", "Team": "Bromley", "Opponent": "Barnsley", "TeamXG": 1.42, "OppXG": 1.32, "TeamGoals": 1.0, "OppGoals": 0.0, "Venue": "Away", "xGDiff": 0.1, "GoalDiff": 1.0, "xGOver": -0.42, "Result": "Win"}, {"MatchID": 15, "Date": "2026-08-22", "Team": "Bromley", "Opponent": "Cambridge United", "TeamXG": 0.58, "OppXG": 0.59, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": -0.01, "GoalDiff": 0.0, "xGOver": 0.42, "Result": "Draw"}, {"MatchID": 4, "Date": "2026-08-15", "Team": "Burton Albion", "Opponent": "Stevenage", "TeamXG": 0.94, "OppXG": 0.53, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 0.41, "GoalDiff": 0.0, "xGOver": 0.06, "Result": "Draw"}, {"MatchID": 17, "Date": "2026-08-22", "Team": "Burton Albion", "Opponent": "Leicester City", "TeamXG": 0.81, "OppXG": 1.31, "TeamGoals": 2.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": -0.5, "GoalDiff": 1.0, "xGOver": 1.19, "Result": "Win"}, {"MatchID": 5, "Date": "2026-08-15", "Team": "Cambridge United", "Opponent": "Wigan Athletic", "TeamXG": 1.74, "OppXG": 2.2, "TeamGoals": 3.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": -0.46, "GoalDiff": 1.0, "xGOver": 1.26, "Result": "Win"}, {"MatchID": 15, "Date": "2026-08-22", "Team": "Cambridge United", "Opponent": "Bromley", "TeamXG": 0.59, "OppXG": 0.58, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": 0.01, "GoalDiff": 0.0, "xGOver": 0.41, "Result": "Draw"}, {"MatchID": 8, "Date": "2026-08-15", "Team": "Doncaster Rovers", "Opponent": "Mansfield Town", "TeamXG": 1.06, "OppXG": 1.44, "TeamGoals": 1.0, "OppGoals": 2.0, "Venue": "Away", "xGDiff": -0.38, "GoalDiff": -1.0, "xGOver": -0.06, "Result": "Loss"}, {"MatchID": 16, "Date": "2026-08-22", "Team": "Doncaster Rovers", "Opponent": "Barnsley", "TeamXG": 1.82, "OppXG": 0.45, "TeamGoals": 0.0, "OppGoals": 0.0, "Venue": "Home", "xGDiff": 1.37, "GoalDiff": 0.0, "xGOver": -1.82, "Result": "Draw"}, {"MatchID": 6, "Date": "2026-08-15", "Team": "Huddersfield Town", "Opponent": "AFC Wimbledon", "TeamXG": 1.24, "OppXG": 0.38, "TeamGoals": 3.0, "OppGoals": 0.0, "Venue": "Home", "xGDiff": 0.86, "GoalDiff": 3.0, "xGOver": 1.76, "Result": "Win"}, {"MatchID": 19, "Date": "2026-08-22", "Team": "Huddersfield Town", "Opponent": "Milton Keynes Dons", "TeamXG": 2.28, "OppXG": 1.54, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": 0.74, "GoalDiff": 0.0, "xGOver": -1.28, "Result": "Draw"}, {"MatchID": 9, "Date": "2026-08-15", "Team": "Leicester City", "Opponent": "Notts County", "TeamXG": 0.74, "OppXG": 2.18, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": -1.44, "GoalDiff": 0.0, "xGOver": 0.26, "Result": "Draw"}, {"MatchID": 17, "Date": "2026-08-22", "Team": "Leicester City", "Opponent": "Burton Albion", "TeamXG": 1.31, "OppXG": 0.81, "TeamGoals": 1.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": 0.5, "GoalDiff": -1.0, "xGOver": -0.31, "Result": "Loss"}, {"MatchID": 7, "Date": "2026-08-15", "Team": "Leyton Orient", "Opponent": "Sheffield Wednesday", "TeamXG": 1.38, "OppXG": 2.84, "TeamGoals": 1.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": -1.46, "GoalDiff": -1.0, "xGOver": -0.38, "Result": "Loss"}, {"MatchID": 23, "Date": "2026-08-22", "Team": "Leyton Orient", "Opponent": "Wigan Athletic", "TeamXG": 1.25, "OppXG": 1.6, "TeamGoals": 2.0, "OppGoals": 0.0, "Venue": "Away", "xGDiff": -0.35, "GoalDiff": 2.0, "xGOver": 0.75, "Result": "Win"}, {"MatchID": 12, "Date": "2026-08-15", "Team": "Luton Town", "Opponent": "Reading", "TeamXG": 1.65, "OppXG": 1.61, "TeamGoals": 4.0, "OppGoals": 3.0, "Venue": "Away", "xGDiff": 0.04, "GoalDiff": 1.0, "xGOver": 2.35, "Result": "Win"}, {"MatchID": 18, "Date": "2026-08-22", "Team": "Luton Town", "Opponent": "Notts County", "TeamXG": 1.85, "OppXG": 0.76, "TeamGoals": 2.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": 1.09, "GoalDiff": 0.0, "xGOver": 0.15, "Result": "Draw"}, {"MatchID": 8, "Date": "2026-08-15", "Team": "Mansfield Town", "Opponent": "Doncaster Rovers", "TeamXG": 1.44, "OppXG": 1.06, "TeamGoals": 2.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 0.38, "GoalDiff": 1.0, "xGOver": 0.56, "Result": "Win"}, {"MatchID": 20, "Date": "2026-08-22", "Team": "Mansfield Town", "Opponent": "Peterborough United", "TeamXG": 1.25, "OppXG": 1.39, "TeamGoals": 1.0, "OppGoals": 2.0, "Venue": "Away", "xGDiff": -0.14, "GoalDiff": -1.0, "xGOver": -0.25, "Result": "Loss"}, {"MatchID": 10, "Date": "2026-08-15", "Team": "Milton Keynes Dons", "Opponent": "Oxford United", "TeamXG": 2.2, "OppXG": 1.83, "TeamGoals": 2.0, "OppGoals": 2.0, "Venue": "Away", "xGDiff": 0.37, "GoalDiff": 0.0, "xGOver": -0.2, "Result": "Draw"}, {"MatchID": 19, "Date": "2026-08-22", "Team": "Milton Keynes Dons", "Opponent": "Huddersfield Town", "TeamXG": 1.54, "OppXG": 2.28, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": -0.74, "GoalDiff": 0.0, "xGOver": -0.54, "Result": "Draw"}, {"MatchID": 9, "Date": "2026-08-15", "Team": "Notts County", "Opponent": "Leicester City", "TeamXG": 2.18, "OppXG": 0.74, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 1.44, "GoalDiff": 0.0, "xGOver": -1.18, "Result": "Draw"}, {"MatchID": 18, "Date": "2026-08-22", "Team": "Notts County", "Opponent": "Luton Town", "TeamXG": 0.76, "OppXG": 1.85, "TeamGoals": 2.0, "OppGoals": 2.0, "Venue": "Away", "xGDiff": -1.09, "GoalDiff": 0.0, "xGOver": 1.24, "Result": "Draw"}, {"MatchID": 10, "Date": "2026-08-15", "Team": "Oxford United", "Opponent": "Milton Keynes Dons", "TeamXG": 1.83, "OppXG": 2.2, "TeamGoals": 2.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": -0.37, "GoalDiff": 0.0, "xGOver": 0.17, "Result": "Draw"}, {"MatchID": 21, "Date": "2026-08-22", "Team": "Oxford United", "Opponent": "Stevenage", "TeamXG": 1.36, "OppXG": 1.17, "TeamGoals": 2.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": 0.19, "GoalDiff": 1.0, "xGOver": 0.64, "Result": "Win"}, {"MatchID": 3, "Date": "2026-08-15", "Team": "Peterborough United", "Opponent": "Bradford City", "TeamXG": 1.11, "OppXG": 1.97, "TeamGoals": 0.0, "OppGoals": 2.0, "Venue": "Away", "xGDiff": -0.86, "GoalDiff": -2.0, "xGOver": -1.11, "Result": "Loss"}, {"MatchID": 20, "Date": "2026-08-22", "Team": "Peterborough United", "Opponent": "Mansfield Town", "TeamXG": 1.39, "OppXG": 1.25, "TeamGoals": 2.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 0.14, "GoalDiff": 1.0, "xGOver": 0.61, "Result": "Win"}, {"MatchID": 11, "Date": "2026-08-15", "Team": "Plymouth Argyle", "Opponent": "Stockport County", "TeamXG": 0.92, "OppXG": 1.81, "TeamGoals": 1.0, "OppGoals": 3.0, "Venue": "Home", "xGDiff": -0.89, "GoalDiff": -2.0, "xGOver": 0.08, "Result": "Loss"}, {"MatchID": 24, "Date": "2026-08-22", "Team": "Plymouth Argyle", "Opponent": "Wycombe Wanderers", "TeamXG": 0.76, "OppXG": 1.89, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": -1.13, "GoalDiff": 0.0, "xGOver": 0.24, "Result": "Draw"}, {"MatchID": 12, "Date": "2026-08-15", "Team": "Reading", "Opponent": "Luton Town", "TeamXG": 1.61, "OppXG": 1.65, "TeamGoals": 3.0, "OppGoals": 4.0, "Venue": "Home", "xGDiff": -0.04, "GoalDiff": -1.0, "xGOver": 1.39, "Result": "Loss"}, {"MatchID": 14, "Date": "2026-08-22", "Team": "Reading", "Opponent": "AFC Wimbledon", "TeamXG": 1.28, "OppXG": 0.37, "TeamGoals": 0.0, "OppGoals": 0.0, "Venue": "Away", "xGDiff": 0.91, "GoalDiff": 0.0, "xGOver": -1.28, "Result": "Draw"}, {"MatchID": 7, "Date": "2026-08-15", "Team": "Sheffield Wednesday", "Opponent": "Leyton Orient", "TeamXG": 2.84, "OppXG": 1.38, "TeamGoals": 2.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": 1.46, "GoalDiff": 1.0, "xGOver": -0.84, "Result": "Win"}, {"MatchID": 13, "Date": "2026-08-20", "Team": "Sheffield Wednesday", "Opponent": "Bradford City", "TeamXG": 1.49, "OppXG": 0.59, "TeamGoals": 0.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 0.9, "GoalDiff": -1.0, "xGOver": -1.49, "Result": "Loss"}, {"MatchID": 4, "Date": "2026-08-15", "Team": "Stevenage", "Opponent": "Burton Albion", "TeamXG": 0.53, "OppXG": 0.94, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": -0.41, "GoalDiff": 0.0, "xGOver": 0.47, "Result": "Draw"}, {"MatchID": 21, "Date": "2026-08-22", "Team": "Stevenage", "Opponent": "Oxford United", "TeamXG": 1.17, "OppXG": 1.36, "TeamGoals": 1.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": -0.19, "GoalDiff": -1.0, "xGOver": -0.17, "Result": "Loss"}, {"MatchID": 11, "Date": "2026-08-15", "Team": "Stockport County", "Opponent": "Plymouth Argyle", "TeamXG": 1.81, "OppXG": 0.92, "TeamGoals": 3.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": 0.89, "GoalDiff": 2.0, "xGOver": 1.19, "Result": "Win"}, {"MatchID": 22, "Date": "2026-08-22", "Team": "Stockport County", "Opponent": "Blackpool", "TeamXG": 3.54, "OppXG": 1.79, "TeamGoals": 1.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": 1.75, "GoalDiff": -1.0, "xGOver": -2.54, "Result": "Loss"}, {"MatchID": 5, "Date": "2026-08-15", "Team": "Wigan Athletic", "Opponent": "Cambridge United", "TeamXG": 2.2, "OppXG": 1.74, "TeamGoals": 2.0, "OppGoals": 3.0, "Venue": "Away", "xGDiff": 0.46, "GoalDiff": -1.0, "xGOver": -0.2, "Result": "Loss"}, {"MatchID": 23, "Date": "2026-08-22", "Team": "Wigan Athletic", "Opponent": "Leyton Orient", "TeamXG": 1.6, "OppXG": 1.25, "TeamGoals": 0.0, "OppGoals": 2.0, "Venue": "Home", "xGDiff": 0.35, "GoalDiff": -2.0, "xGOver": -1.6, "Result": "Loss"}, {"MatchID": 2, "Date": "2026-08-15", "Team": "Wycombe Wanderers", "Opponent": "Blackpool", "TeamXG": 1.29, "OppXG": 2.37, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Away", "xGDiff": -1.08, "GoalDiff": 0.0, "xGOver": -0.29, "Result": "Draw"}, {"MatchID": 24, "Date": "2026-08-22", "Team": "Wycombe Wanderers", "Opponent": "Plymouth Argyle", "TeamXG": 1.89, "OppXG": 0.76, "TeamGoals": 1.0, "OppGoals": 1.0, "Venue": "Home", "xGDiff": 1.13, "GoalDiff": 0.0, "xGOver": -0.89, "Result": "Draw"}], "teams": [{"Team": "Bradford City", "Played": 2, "Wins": 2, "Draws": 0, "Losses": 0, "GoalsFor": 3.0, "GoalsAgainst": 0.0, "xGFor": 2.56, "xGAgainst": 2.6, "Points": 6, "GoalDiff": 3.0, "xGDiff": -0.04, "xGOver": 0.44, "xGForPerGame": 1.28, "xGAgainstPerGame": 1.3, "GoalsForPerGame": 1.5}, {"Team": "Huddersfield Town", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 4.0, "GoalsAgainst": 1.0, "xGFor": 3.52, "xGAgainst": 1.92, "Points": 4, "GoalDiff": 3.0, "xGDiff": 1.6, "xGOver": 0.48, "xGForPerGame": 1.76, "xGAgainstPerGame": 0.96, "GoalsForPerGame": 2.0}, {"Team": "Blackpool", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 3.0, "GoalsAgainst": 2.0, "xGFor": 4.16, "xGAgainst": 4.83, "Points": 4, "GoalDiff": 1.0, "xGDiff": -0.67, "xGOver": -1.16, "xGForPerGame": 2.08, "xGAgainstPerGame": 2.42, "GoalsForPerGame": 1.5}, {"Team": "Bromley", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 2.0, "GoalsAgainst": 1.0, "xGFor": 2.0, "xGAgainst": 1.91, "Points": 4, "GoalDiff": 1.0, "xGDiff": 0.09, "xGOver": 0.0, "xGForPerGame": 1.0, "xGAgainstPerGame": 0.96, "GoalsForPerGame": 1.0}, {"Team": "Burton Albion", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 3.0, "GoalsAgainst": 2.0, "xGFor": 1.75, "xGAgainst": 1.84, "Points": 4, "GoalDiff": 1.0, "xGDiff": -0.09, "xGOver": 1.25, "xGForPerGame": 0.88, "xGAgainstPerGame": 0.92, "GoalsForPerGame": 1.5}, {"Team": "Cambridge United", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 4.0, "GoalsAgainst": 3.0, "xGFor": 2.33, "xGAgainst": 2.78, "Points": 4, "GoalDiff": 1.0, "xGDiff": -0.45, "xGOver": 1.67, "xGForPerGame": 1.16, "xGAgainstPerGame": 1.39, "GoalsForPerGame": 2.0}, {"Team": "Luton Town", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 6.0, "GoalsAgainst": 5.0, "xGFor": 3.5, "xGAgainst": 2.37, "Points": 4, "GoalDiff": 1.0, "xGDiff": 1.13, "xGOver": 2.5, "xGForPerGame": 1.75, "xGAgainstPerGame": 1.18, "GoalsForPerGame": 3.0}, {"Team": "Oxford United", "Played": 2, "Wins": 1, "Draws": 1, "Losses": 0, "GoalsFor": 4.0, "GoalsAgainst": 3.0, "xGFor": 3.19, "xGAgainst": 3.37, "Points": 4, "GoalDiff": 1.0, "xGDiff": -0.18, "xGOver": 0.81, "xGForPerGame": 1.6, "xGAgainstPerGame": 1.68, "GoalsForPerGame": 2.0}, {"Team": "Leyton Orient", "Played": 2, "Wins": 1, "Draws": 0, "Losses": 1, "GoalsFor": 3.0, "GoalsAgainst": 2.0, "xGFor": 2.63, "xGAgainst": 4.44, "Points": 3, "GoalDiff": 1.0, "xGDiff": -1.81, "xGOver": 0.37, "xGForPerGame": 1.32, "xGAgainstPerGame": 2.22, "GoalsForPerGame": 1.5}, {"Team": "Stockport County", "Played": 2, "Wins": 1, "Draws": 0, "Losses": 1, "GoalsFor": 4.0, "GoalsAgainst": 3.0, "xGFor": 5.35, "xGAgainst": 2.71, "Points": 3, "GoalDiff": 1.0, "xGDiff": 2.64, "xGOver": -1.35, "xGForPerGame": 2.68, "xGAgainstPerGame": 1.36, "GoalsForPerGame": 2.0}, {"Team": "Mansfield Town", "Played": 2, "Wins": 1, "Draws": 0, "Losses": 1, "GoalsFor": 3.0, "GoalsAgainst": 3.0, "xGFor": 2.69, "xGAgainst": 2.45, "Points": 3, "GoalDiff": 0.0, "xGDiff": 0.24, "xGOver": 0.31, "xGForPerGame": 1.34, "xGAgainstPerGame": 1.23, "GoalsForPerGame": 1.5}, {"Team": "Sheffield Wednesday", "Played": 2, "Wins": 1, "Draws": 0, "Losses": 1, "GoalsFor": 2.0, "GoalsAgainst": 2.0, "xGFor": 4.33, "xGAgainst": 1.97, "Points": 3, "GoalDiff": 0.0, "xGDiff": 2.36, "xGOver": -2.33, "xGForPerGame": 2.16, "xGAgainstPerGame": 0.98, "GoalsForPerGame": 1.0}, {"Team": "Peterborough United", "Played": 2, "Wins": 1, "Draws": 0, "Losses": 1, "GoalsFor": 2.0, "GoalsAgainst": 3.0, "xGFor": 2.5, "xGAgainst": 3.22, "Points": 3, "GoalDiff": -1.0, "xGDiff": -0.72, "xGOver": -0.5, "xGForPerGame": 1.25, "xGAgainstPerGame": 1.61, "GoalsForPerGame": 1.0}, {"Team": "Milton Keynes Dons", "Played": 2, "Wins": 0, "Draws": 2, "Losses": 0, "GoalsFor": 3.0, "GoalsAgainst": 3.0, "xGFor": 3.74, "xGAgainst": 4.11, "Points": 2, "GoalDiff": 0.0, "xGDiff": -0.37, "xGOver": -0.74, "xGForPerGame": 1.87, "xGAgainstPerGame": 2.05, "GoalsForPerGame": 1.5}, {"Team": "Notts County", "Played": 2, "Wins": 0, "Draws": 2, "Losses": 0, "GoalsFor": 3.0, "GoalsAgainst": 3.0, "xGFor": 2.94, "xGAgainst": 2.59, "Points": 2, "GoalDiff": 0.0, "xGDiff": 0.35, "xGOver": 0.06, "xGForPerGame": 1.47, "xGAgainstPerGame": 1.3, "GoalsForPerGame": 1.5}, {"Team": "Wycombe Wanderers", "Played": 2, "Wins": 0, "Draws": 2, "Losses": 0, "GoalsFor": 2.0, "GoalsAgainst": 2.0, "xGFor": 3.18, "xGAgainst": 3.13, "Points": 2, "GoalDiff": 0.0, "xGDiff": 0.05, "xGOver": -1.18, "xGForPerGame": 1.59, "xGAgainstPerGame": 1.56, "GoalsForPerGame": 1.0}, {"Team": "Barnsley", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 0.0, "GoalsAgainst": 1.0, "xGFor": 1.77, "xGAgainst": 3.24, "Points": 1, "GoalDiff": -1.0, "xGDiff": -1.47, "xGOver": -1.77, "xGForPerGame": 0.88, "xGAgainstPerGame": 1.62, "GoalsForPerGame": 0.0}, {"Team": "Doncaster Rovers", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 1.0, "GoalsAgainst": 2.0, "xGFor": 2.88, "xGAgainst": 1.89, "Points": 1, "GoalDiff": -1.0, "xGDiff": 0.99, "xGOver": -1.88, "xGForPerGame": 1.44, "xGAgainstPerGame": 0.94, "GoalsForPerGame": 0.5}, {"Team": "Leicester City", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 2.0, "GoalsAgainst": 3.0, "xGFor": 2.05, "xGAgainst": 2.99, "Points": 1, "GoalDiff": -1.0, "xGDiff": -0.94, "xGOver": -0.05, "xGForPerGame": 1.02, "xGAgainstPerGame": 1.5, "GoalsForPerGame": 1.0}, {"Team": "Reading", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 3.0, "GoalsAgainst": 4.0, "xGFor": 2.89, "xGAgainst": 2.02, "Points": 1, "GoalDiff": -1.0, "xGDiff": 0.87, "xGOver": 0.11, "xGForPerGame": 1.44, "xGAgainstPerGame": 1.01, "GoalsForPerGame": 1.5}, {"Team": "Stevenage", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 2.0, "GoalsAgainst": 3.0, "xGFor": 1.7, "xGAgainst": 2.3, "Points": 1, "GoalDiff": -1.0, "xGDiff": -0.6, "xGOver": 0.3, "xGForPerGame": 0.85, "xGAgainstPerGame": 1.15, "GoalsForPerGame": 1.0}, {"Team": "Plymouth Argyle", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 2.0, "GoalsAgainst": 4.0, "xGFor": 1.68, "xGAgainst": 3.7, "Points": 1, "GoalDiff": -2.0, "xGDiff": -2.02, "xGOver": 0.32, "xGForPerGame": 0.84, "xGAgainstPerGame": 1.85, "GoalsForPerGame": 1.0}, {"Team": "AFC Wimbledon", "Played": 2, "Wins": 0, "Draws": 1, "Losses": 1, "GoalsFor": 0.0, "GoalsAgainst": 3.0, "xGFor": 0.75, "xGAgainst": 2.52, "Points": 1, "GoalDiff": -3.0, "xGDiff": -1.77, "xGOver": -0.75, "xGForPerGame": 0.38, "xGAgainstPerGame": 1.26, "GoalsForPerGame": 0.0}, {"Team": "Wigan Athletic", "Played": 2, "Wins": 0, "Draws": 0, "Losses": 2, "GoalsFor": 2.0, "GoalsAgainst": 5.0, "xGFor": 3.8, "xGAgainst": 2.99, "Points": 0, "GoalDiff": -3.0, "xGDiff": 0.81, "xGOver": -1.8, "xGForPerGame": 1.9, "xGAgainstPerGame": 1.5, "GoalsForPerGame": 1.0}]};
+Chart.defaults.color = '#95AA9F';
+Chart.defaults.font.family = "'Inter',sans-serif";
+Chart.defaults.borderColor = 'rgba(242,239,228,0.10)';
+const GOLD='#E8B94B', WIN='#57A373', LOSS='#C1544A', CHALK='#F2EFE4', MUTED='#95AA9F';
+
+let teams=[], teamLevel=[], matches=[], teamNames=[];
+let overviewBarChartRef, radarChart, compareBarChart, trendBarChart, scatterChart;
+
+function leagueTableCompare(a,b){
+  return (b.Points-a.Points) || (b.GoalDiff-a.GoalDiff) || (b.GoalsFor-a.GoalsFor) || a.Team.localeCompare(b.Team);
+}
+
+/* ---------- BUILD TEAM-LEVEL DATA FROM RAW MATCH ROWS ---------- */
+function buildFromRawMatches(rawRows){
+  const played = rawRows.filter(m =>
+    m.HomeGoals!==null && m.HomeGoals!=='' && !isNaN(m.HomeGoals) &&
+    m.AwayGoals!==null && m.AwayGoals!=='' && !isNaN(m.AwayGoals)
+  ).map(m => ({
+    MatchID:m.MatchID, Date:m.Date, HomeTeam:m.HomeTeam, AwayTeam:m.AwayTeam,
+    HomeXG:+m.HomeXG, AwayXG:+m.AwayXG, HomeGoals:+m.HomeGoals, AwayGoals:+m.AwayGoals
+  }));
+  played.forEach(m=>{
+    m.Result = m.HomeGoals>m.AwayGoals ? 'Home Win' : m.HomeGoals<m.AwayGoals ? 'Away Win' : 'Draw';
+  });
+
+  const tl = [];
+  played.forEach(m=>{
+    tl.push({MatchID:m.MatchID, Date:m.Date, Team:m.HomeTeam, Opponent:m.AwayTeam, TeamXG:m.HomeXG, OppXG:m.AwayXG, TeamGoals:m.HomeGoals, OppGoals:m.AwayGoals, Venue:'Home'});
+    tl.push({MatchID:m.MatchID, Date:m.Date, Team:m.AwayTeam, Opponent:m.HomeTeam, TeamXG:m.AwayXG, OppXG:m.HomeXG, TeamGoals:m.AwayGoals, OppGoals:m.HomeGoals, Venue:'Away'});
+  });
+  tl.forEach(r=>{
+    r.xGDiff = +(r.TeamXG-r.OppXG).toFixed(2);
+    r.GoalDiff = r.TeamGoals-r.OppGoals;
+    r.xGOver = +(r.TeamGoals-r.TeamXG).toFixed(2);
+    r.Result = r.TeamGoals>r.OppGoals ? 'Win' : r.TeamGoals<r.OppGoals ? 'Loss' : 'Draw';
+  });
+
+  const byTeam = {};
+  tl.forEach(r=>{
+    if(!byTeam[r.Team]) byTeam[r.Team] = {Team:r.Team, Played:0, Wins:0, Draws:0, Losses:0, GoalsFor:0, GoalsAgainst:0, xGFor:0, xGAgainst:0};
+    const t = byTeam[r.Team];
+    t.Played++; t.GoalsFor+=r.TeamGoals; t.GoalsAgainst+=r.OppGoals; t.xGFor+=r.TeamXG; t.xGAgainst+=r.OppXG;
+    if(r.Result==='Win') t.Wins++; else if(r.Result==='Draw') t.Draws++; else t.Losses++;
+  });
+  const teamsArr = Object.values(byTeam).map(t=>{
+    t.Points = t.Wins*3 + t.Draws;
+    t.GoalDiff = t.GoalsFor - t.GoalsAgainst;
+    t.xGFor = +t.xGFor.toFixed(2); t.xGAgainst = +t.xGAgainst.toFixed(2);
+    t.xGDiff = +(t.xGFor - t.xGAgainst).toFixed(2);
+    t.xGOver = +(t.GoalsFor - t.xGFor).toFixed(2);
+    t.xGForPerGame = +(t.xGFor/t.Played).toFixed(2);
+    t.xGAgainstPerGame = +(t.xGAgainst/t.Played).toFixed(2);
+    return t;
+  });
+
+  return {matches:played, teamLevel:tl, teams:teamsArr};
+}
+
+/* ---------- FLEXIBLE CSV HEADER MATCHING ---------- */
+function mapRawHeaders(rows){
+  if(!rows.length) return [];
+  const headers = Object.keys(rows[0]);
+  const find = (test) => headers.find(h => test(h.toLowerCase().trim()));
+  const col = {
+    MatchID: find(h=>h.includes('match')&&h.includes('id')) || find(h=>h==='id'),
+    Date: find(h=>h.includes('date')),
+    HomeTeam: find(h=>h.includes('home')&&h.includes('team')),
+    AwayTeam: find(h=>h.includes('away')&&h.includes('team')),
+    HomeXG: find(h=>h.includes('home')&&h.includes('xg')),
+    AwayXG: find(h=>h.includes('away')&&h.includes('xg')),
+    HomeGoals: find(h=>h.includes('home')&&h.includes('goal')),
+    AwayGoals: find(h=>h.includes('away')&&h.includes('goal')),
+  };
+  const missing = Object.entries(col).filter(([k,v])=>!v).map(([k])=>k);
+  if(missing.length) throw new Error('Missing required columns: '+missing.join(', '));
+  return rows.map(r => ({
+    MatchID:r[col.MatchID], Date:r[col.Date], HomeTeam:(r[col.HomeTeam]||'').trim(), AwayTeam:(r[col.AwayTeam]||'').trim(),
+    HomeXG:r[col.HomeXG], AwayXG:r[col.AwayXG], HomeGoals:r[col.HomeGoals], AwayGoals:r[col.AwayGoals]
+  })).filter(r => r.HomeTeam && r.AwayTeam);
+}
+
+/* ---------- FILE UPLOAD ---------- */
+document.getElementById('csvInput').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('dataStatus');
+  statusEl.textContent = 'Reading '+file.name+'...';
+  statusEl.className = 'data-status';
+
+  Papa.parse(file, {
+    header:true, skipEmptyLines:true,
+    complete: function(results){
+      try{
+        const raw = mapRawHeaders(results.data);
+        const built = buildFromRawMatches(raw);
+        if(built.matches.length === 0) throw new Error('No played matches found (need Home Goals & Away Goals filled in)');
+        loadDashboard(built);
+        statusEl.textContent = 'Loaded '+file.name+' — '+built.matches.length+' matches played, '+built.teams.length+' teams';
+        statusEl.className = 'data-status ok';
+      }catch(err){
+        statusEl.textContent = 'Could not read that file: '+err.message;
+        statusEl.className = 'data-status err';
+      }
+    },
+    error: function(err){
+      statusEl.textContent = 'Could not read that file: '+err.message;
+      statusEl.className = 'data-status err';
+    }
+  });
+});
+
+/* ---------- TABS ---------- */
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ---------- HERO STATS ---------- */
+function heroStats(){
+  const leader = teams[0];
+  const gamesPlayed = matches.length;
+  const totalGoals = matches.reduce((s,m)=>s+m.HomeGoals+m.AwayGoals,0);
+  const avgGoals = gamesPlayed ? (totalGoals/gamesPlayed).toFixed(2) : '0.00';
+  document.getElementById('heroStats').innerHTML = [
+    ['League Leader', leader ? leader.Team : '—'],
+    ['Matches Played', gamesPlayed],
+    ['Avg Goals / Match', avgGoals],
+    ['Teams Tracked', teams.length]
+  ].map(([label,num])=>`<div class="hero-stat"><div class="num">${num}</div><div class="label">${label}</div></div>`).join('');
+}
+
+/* ---------- OVERVIEW ---------- */
+function overviewCards(){
+  const bestAttack = teams.slice().sort((a,b)=>b.xGForPerGame-a.xGForPerGame)[0];
+  const bestDefense = teams.slice().sort((a,b)=>a.xGAgainstPerGame-b.xGAgainstPerGame)[0];
+  const overperf = teams.slice().sort((a,b)=>b.xGOver-a.xGOver)[0];
+  const underperf = teams.slice().sort((a,b)=>a.xGOver-b.xGOver)[0];
+  const cards = [
+    {label:'League Leader', value:teams[0].Team, sub:teams[0].Points+' pts from '+teams[0].Played+' games', cls:''},
+    {label:'Best Attack', value:bestAttack.Team, sub:bestAttack.xGForPerGame+' xG created / game', cls:'pos'},
+    {label:'Best Defense', value:bestDefense.Team, sub:bestDefense.xGAgainstPerGame+' xG conceded / game', cls:'pos'},
+    {label:'Biggest Overperformer', value:overperf.Team, sub:'+'+overperf.xGOver+' goals vs xG', cls:'pos'},
+    {label:'Biggest Underperformer', value:underperf.Team, sub:underperf.xGOver+' goals vs xG', cls:'neg'},
+  ];
+  document.getElementById('overviewCards').innerHTML = cards.map(c=>`
+    <div class="stat-card ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      <div class="sub">${c.sub}</div>
+    </div>`).join('');
+}
+
+function bestTeamsList(){
+  const top = teams.slice(0,8);
+  document.getElementById('bestTeamsList').innerHTML = top.map(t=>`
+    <li>
+      <span class="rnum">${t.rank}</span>
+      <span class="rteam">${t.Team}</span>
+      <span class="rpts">${t.Points} pts &middot; GD ${t.GoalDiff>0?'+':''}${t.GoalDiff}</span>
+    </li>`).join('');
+}
+
+function overviewBarChart(){
+  const sorted = teams.slice().sort((a,b)=> b.xGDiff-a.xGDiff);
+  if(overviewBarChartRef) overviewBarChartRef.destroy();
+  overviewBarChartRef = new Chart(document.getElementById('chartOverviewBars'), {
+    type:'bar',
+    data:{
+      labels: sorted.map(t=>t.Team),
+      datasets:[
+        {label:'xG For / game', data: sorted.map(t=>t.xGForPerGame), backgroundColor: WIN},
+        {label:'xG Against / game', data: sorted.map(t=>-t.xGAgainstPerGame), backgroundColor: LOSS}
+      ]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      plugins:{ legend:{position:'top', labels:{boxWidth:12}}, tooltip:{callbacks:{label:(c)=>`${c.dataset.label}: ${Math.abs(c.raw).toFixed(2)}`}} },
+      scales:{ x:{ stacked:false, ticks:{callback:v=>Math.abs(v)} }, y:{ ticks:{autoSkip:false, font:{size:10}} } }
+    }
+  });
+}
+
+function insights(){
+  const overperf = teams.slice().sort((a,b)=>b.xGOver-a.xGOver)[0];
+  const underperf = teams.slice().sort((a,b)=>a.xGOver-b.xGOver)[0];
+  let upset=null, upsetMargin=-1;
+  matches.forEach(m=>{
+    const xgFav = m.HomeXG - m.AwayXG;
+    const actualGD = m.HomeGoals - m.AwayGoals;
+    const isUpset = (xgFav>0 && actualGD<0) || (xgFav<0 && actualGD>0);
+    if(isUpset && Math.abs(xgFav) > upsetMargin){ upsetMargin=Math.abs(xgFav); upset=m; }
+  });
+  const highScoring = matches.slice().sort((a,b)=> (b.HomeGoals+b.AwayGoals)-(a.HomeGoals+a.AwayGoals))[0];
+  const regressionCandidate = teams.slice().filter(t=>t.Points>=3).sort((a,b)=> a.xGDiff-b.xGDiff)[0];
+  const overdueCandidate = teams.slice().filter(t=>t.xGDiff>0.5).sort((a,b)=> a.Points-b.Points || b.xGDiff-a.xGDiff)[0];
+
+  const cards = [
+    {tag:'Clinical Finishing', html:`<strong>${overperf.Team}</strong> have scored <strong>${overperf.xGOver>0?'+':''}${overperf.xGOver}</strong> goals more than their chances suggested &mdash; the league's most efficient finishing so far.`},
+    {tag:'Wasteful in Front of Goal', html:`<strong>${underperf.Team}</strong> are the opposite story: <strong>${underperf.xGOver}</strong> goals below their expected total, despite creating good chances.`},
+  ];
+  if(regressionCandidate) cards.push({tag:'Regression Watch', html:`<strong>${regressionCandidate.Team}</strong> currently sit on ${regressionCandidate.Points} points but have a <strong>negative</strong> xG difference (${regressionCandidate.xGDiff}) &mdash; results have outpaced performance so far.`});
+  if(overdueCandidate) cards.push({tag:'Due a Turnaround', html:`<strong>${overdueCandidate.Team}</strong> have a healthy xG difference of <strong>+${overdueCandidate.xGDiff}</strong> but only ${overdueCandidate.Points} points &mdash; the underlying numbers suggest better results are coming.`});
+  if(upset) cards.push({tag:'Biggest Upset', html:`<strong>${upset.HomeTeam} ${upset.HomeGoals}&ndash;${upset.AwayGoals} ${upset.AwayTeam}</strong> defied the xG model by the widest margin (${upsetMargin.toFixed(2)} xG) this season.`});
+  if(highScoring) cards.push({tag:'Highest Scoring', html:`<strong>${highScoring.HomeTeam} ${highScoring.HomeGoals}&ndash;${highScoring.AwayGoals} ${highScoring.AwayTeam}</strong> produced the most goals in a single match so far.`});
+
+  document.getElementById('insightsGrid').innerHTML = cards.map(c=>`
+    <div class="insight"><div class="itag">${c.tag}</div><p>${c.html}</p></div>`).join('');
+}
+
+/* ---------- COMPARISON ---------- */
+function populateSelectors(){
+  [['teamA',0],['teamB',1],['trendTeam',0]].forEach(([id,idx])=>{
+    const sel = document.getElementById(id);
+    sel.innerHTML = teamNames.map(n=>`<option value="${n}">${n}</option>`).join('');
+    sel.value = teamNames[Math.min(idx, teamNames.length-1)];
+  });
+}
+function getTeam(name){ return teams.find(t=>t.Team===name); }
+function getForm(name, n=5){
+  return teamLevel.filter(r=>r.Team===name).sort((a,b)=> new Date(b.Date)-new Date(a.Date)).slice(0,n)
+    .map(r=> r.Result==='Win'?'W':r.Result==='Loss'?'L':'D');
+}
+
+function renderComparison(){
+  const nameA = document.getElementById('teamA').value;
+  const nameB = document.getElementById('teamB').value;
+  const a = getTeam(nameA), b = getTeam(nameB);
+  if(!a || !b) return;
+
+  function norm(key, invert=false){
+    const vals = teams.map(t=>t[key]);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    return (t)=> { let v = (t[key]-min)/((max-min)||1); if(invert) v = 1-v; return Math.round(v*100); };
+  }
+  const nAttack = norm('xGForPerGame');
+  const nDefense = norm('xGAgainstPerGame', true);
+  const nFinish = norm('xGOver');
+  const nPoints = norm('Points');
+  const nGD = norm('GoalDiff');
+
+  const labels = ['Attack (xGF/gm)','Defense (xGA/gm)','Finishing (xG&plusmn;)','Points','Goal Diff'];
+  const dataA = [nAttack(a), nDefense(a), nFinish(a), nPoints(a), nGD(a)];
+  const dataB = [nAttack(b), nDefense(b), nFinish(b), nPoints(b), nGD(b)];
+
+  if(radarChart) radarChart.destroy();
+  radarChart = new Chart(document.getElementById('chartRadar'), {
+    type:'radar',
+    data:{ labels, datasets:[
+      {label:nameA, data:dataA, borderColor:GOLD, backgroundColor:'rgba(232,185,75,0.18)', pointBackgroundColor:GOLD},
+      {label:nameB, data:dataB, borderColor:WIN, backgroundColor:'rgba(87,163,115,0.15)', pointBackgroundColor:WIN}
+    ]},
+    options:{ scales:{ r:{ min:0, max:100, ticks:{display:false}, grid:{color:'rgba(242,239,228,0.10)'}, pointLabels:{color:CHALK, font:{size:11}} } },
+      plugins:{legend:{labels:{boxWidth:12}}} }
+  });
+
+  if(compareBarChart) compareBarChart.destroy();
+  const metrics = [['Points','Points'],['Goal Diff','GoalDiff'],['xG Diff','xGDiff'],['Goals For','GoalsFor'],['Goals Against','GoalsAgainst']];
+  compareBarChart = new Chart(document.getElementById('chartCompareBar'), {
+    type:'bar',
+    data:{ labels: metrics.map(m=>m[0]), datasets:[
+      {label:nameA, data: metrics.map(m=>a[m[1]]), backgroundColor:GOLD},
+      {label:nameB, data: metrics.map(m=>b[m[1]]), backgroundColor:WIN}
+    ]},
+    options:{ plugins:{legend:{labels:{boxWidth:12}}}, scales:{ y:{ grid:{color:'rgba(242,239,228,0.08)'} } } }
+  });
+
+  [[a,'teamACardWrap'],[b,'teamBCardWrap']].forEach(([t,wrapId])=>{
+    const form = getForm(t.Team);
+    document.getElementById(wrapId).innerHTML = `
+      <h4>${t.Team}</h4>
+      <div class="mini-stat-row"><span class="k">League Position</span><span class="v">${t.rank} of ${teams.length}</span></div>
+      <div class="mini-stat-row"><span class="k">Record</span><span class="v">${t.Wins}W ${t.Draws}D ${t.Losses}L</span></div>
+      <div class="mini-stat-row"><span class="k">xG For / Against</span><span class="v">${t.xGFor.toFixed(2)} / ${t.xGAgainst.toFixed(2)}</span></div>
+      <div class="mini-stat-row"><span class="k">xG Overperformance</span><span class="v">${t.xGOver>0?'+':''}${t.xGOver}</span></div>
+      <div class="mini-stat-row"><span class="k">Recent Form</span><span class="v"></span></div>
+      <div class="form-dots">${form.map(r=>`<span class="dot ${r}">${r}</span>`).join('') || '<span class="sub">No matches yet</span>'}</div>
+    `;
+  });
+}
+document.getElementById('teamA').addEventListener('change', renderComparison);
+document.getElementById('teamB').addEventListener('change', renderComparison);
+
+/* ---------- TRENDS ---------- */
+function renderTrends(){
+  const name = document.getElementById('trendTeam').value;
+  document.getElementById('trendTeamLabel').textContent = name ? '— '+name : '';
+  const rows = teamLevel.filter(r=>r.Team===name).sort((a,b)=> new Date(a.Date)-new Date(b.Date));
+  const labels = rows.map((r,i)=> 'M'+(i+1));
+  const diffs = rows.map(r=>r.xGDiff);
+
+  if(trendBarChart) trendBarChart.destroy();
+  trendBarChart = new Chart(document.getElementById('chartTrendBar'), {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'xG Diff', data: diffs, backgroundColor: diffs.map(v=> v>=0?WIN:LOSS) }]},
+    options:{ plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>`xG Diff: ${c.raw>0?'+':''}${c.raw.toFixed(2)}`}}},
+      scales:{ y:{ grid:{color:'rgba(242,239,228,0.08)'} }, x:{ grid:{display:false} } } }
+  });
+
+  renderScatter(name);
+}
+
+function renderScatter(highlightName){
+  if(scatterChart) scatterChart.destroy();
+  const others = teams.filter(t=>t.Team!==highlightName);
+  const hi = teams.find(t=>t.Team===highlightName);
+  scatterChart = new Chart(document.getElementById('chartScatter'), {
+    type:'bubble',
+    data:{ datasets:[
+      { label:'Teams', data: others.map(t=>({x:t.xGForPerGame, y:t.xGAgainstPerGame, r: 5+t.Points*1.6, team:t.Team, pts:t.Points})),
+        backgroundColor:'rgba(149,170,159,0.45)' },
+      { label:highlightName, data: hi ? [{x:hi.xGForPerGame, y:hi.xGAgainstPerGame, r:6+hi.Points*1.6, team:hi.Team, pts:hi.Points}] : [],
+        backgroundColor: GOLD }
+    ]},
+    options:{
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ label:(c)=> `${c.raw.team}: ${c.raw.x.toFixed(2)} xGF/gm, ${c.raw.y.toFixed(2)} xGA/gm, ${c.raw.pts} pts` } } },
+      scales:{
+        x:{ title:{display:true, text:'xG For / game (attack →)', color:MUTED}, grid:{color:'rgba(242,239,228,0.08)'} },
+        y:{ reverse:true, title:{display:true, text:'xG Against / game (lower = stronger defense ↑)', color:MUTED}, grid:{color:'rgba(242,239,228,0.08)'} }
+      }
+    }
+  });
+}
+document.getElementById('trendTeam').addEventListener('change', renderTrends);
+
+/* ---------- LEADERBOARD ---------- */
+let sortKey='rank', sortDir=1;
+function renderTable(){
+  const q = document.getElementById('tableSearch').value.toLowerCase();
+  let rows = teams.filter(t=> t.Team.toLowerCase().includes(q));
+  if(sortKey==='rank'){
+    rows.sort((a,b)=> leagueTableCompare(a,b) * sortDir);
+  } else {
+    rows.sort((a,b)=> (a[sortKey]-b[sortKey])*sortDir || leagueTableCompare(a,b));
+  }
+  document.getElementById('leaderboardBody').innerHTML = rows.map(t=>`
+    <tr>
+      <td>${t.rank}</td>
+      <td>${t.Team}</td>
+      <td>${t.Played}</td><td>${t.Wins}</td><td>${t.Draws}</td><td>${t.Losses}</td>
+      <td>${t.GoalsFor}</td><td>${t.GoalsAgainst}</td>
+      <td class="${t.GoalDiff>0?'pos-val':t.GoalDiff<0?'neg-val':''}">${t.GoalDiff>0?'+':''}${t.GoalDiff}</td>
+      <td>${t.Points}</td>
+      <td>${t.xGFor.toFixed(2)}</td><td>${t.xGAgainst.toFixed(2)}</td>
+      <td class="${t.xGDiff>0?'pos-val':t.xGDiff<0?'neg-val':''}">${t.xGDiff>0?'+':''}${t.xGDiff}</td>
+      <td class="${t.xGOver>0?'pos-val':t.xGOver<0?'neg-val':''}">${t.xGOver>0?'+':''}${t.xGOver}</td>
+    </tr>`).join('');
+}
+document.querySelectorAll('#leaderboardTable thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.dataset.key;
+    if(sortKey===key) sortDir*=-1; else { sortKey=key; sortDir = (key==='rank') ? 1 : -1; }
+    renderTable();
+  });
+});
+document.getElementById('tableSearch').addEventListener('input', renderTable);
+
+/* ---------- MASTER LOADER ---------- */
+function loadDashboard(built){
+  teams = built.teams.slice().sort(leagueTableCompare);
+  teams.forEach((t,i)=> t.rank = i+1);
+  teamLevel = built.teamLevel;
+  matches = built.matches;
+  teamNames = teams.map(t=>t.Team).sort();
+
+  heroStats();
+  overviewCards();
+  bestTeamsList();
+  overviewBarChart();
+  insights();
+  populateSelectors();
+  renderComparison();
+  renderTrends();
+  renderTable();
+}
+
+/* ---------- INIT WITH EMBEDDED SAMPLE DATA ---------- */
+loadDashboard(DATA);
+
+</script>
+</body>
+</html>
